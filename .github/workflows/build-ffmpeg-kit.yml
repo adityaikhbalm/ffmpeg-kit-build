@@ -1,0 +1,113 @@
+name: Build ffmpeg-kit-next AAR
+
+# Build manual saja karena prosesnya berat (Â±1-2 jam menit-billing repo privat).
+# Workflow ini TIDAK menyimpan source ffmpeg-kit-next di repo VEDIT:
+# CI meng-clonenya langsung dari arthenica/ffmpeg-kit-next saat build,
+# lalu .aar hasilnya diupload sebagai release asset di repo VEDIT ini.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ffmpeg_kit_ref:
+        description: "Ref ffmpeg-kit-next (tag/branch/commit) dari arthenica"
+        required: false
+        default: "v9.0.0"
+      enable_gpl:
+        description: "Aktifkan GPL --enable-gpl (wajib untuk x264/x265)"
+        type: boolean
+        required: false
+        default: false
+      extra_build_flags:
+        description: "Flag tambahan android.sh (spasi sebagai pemisah)"
+        required: false
+        default: "--disable-arch-x86"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: android.sh (${{ inputs.ffmpeg_kit_ref }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Checkout source ffmpeg-kit-next
+        uses: actions/checkout@v4
+        with:
+          repository: arthenica/ffmpeg-kit-next
+          ref: ${{ inputs.ffmpeg_kit_ref }}
+          fetch-depth: 1
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install host build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf automake libtool pkg-config gettext \
+            nasm yasm bison gperf texinfo ninja-build meson \
+            ruby patch file zip unzip
+
+      - name: Install komponen Android SDK (NDK r27d, platform 34, build-tools 35.0.0, cmake 3.22.1)
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
+            "platforms;android-34" \
+            "build-tools;35.0.0" \
+            "ndk;27.3.13750724" \
+            "cmake;3.22.1"
+
+      - name: Build AAR (android.sh)
+        run: |
+          export ANDROID_SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_NDK_ROOT="$ANDROID_SDK_ROOT/ndk/27.3.13750724"
+          FLAGS="${{ inputs.extra_build_flags }}"
+          if [ "${{ inputs.enable_gpl }}" = "true" ]; then
+            FLAGS="$FLAGS --enable-gpl"
+          fi
+          echo "Flags android.sh: $FLAGS"
+          ./android.sh $FLAGS
+
+      - name: Kumpulkan hasil build (.aar/.pom)
+        run: |
+          mkdir -p dist
+          find prebuilt -type f -name "*.aar" -exec cp {} dist/ \;
+          find prebuilt -type f -name "*.pom" -exec cp {} dist/ \; || true
+          ls -lh dist
+          test -n "$(find dist -name '*.aar' -print -quit)" || { echo 'Tidak ada .aar dihasilkan'; exit 1; }
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-kit-next-aar-${{ inputs.ffmpeg_kit_ref }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Publish AAR sebagai release asset
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Unduh artifact build
+        uses: actions/download-artifact@v4
+        with:
+          name: ffmpeg-kit-next-aar-${{ inputs.ffmpeg_kit_ref }}
+          path: dist
+
+      - name: Buat GitHub release & lampirkan .aar
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ffmpeg-kit-next-${{ inputs.ffmpeg_kit_ref }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes "ffmpeg-kit-next ${{ inputs.ffmpeg_kit_ref }} AAR, dibangun otomatis oleh CI VEDIT.\nSource: https://github.com/arthenica/ffmpeg-kit-next/tree/${{ inputs.ffmpeg_kit_ref }}\n\nCara pakai: unduh .aar, taruh di repo Maven lokal (mis. /libs atau localMaven), lalu implementasi com.arthenica:ffmpeg-kit-next di Gradle."
+          gh release upload "$TAG" dist/* --clobber
+          echo "Release $TAG siap:" 
+          gh release view "$TAG" --json url -q .url
