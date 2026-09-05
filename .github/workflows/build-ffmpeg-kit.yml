@@ -102,6 +102,7 @@ jobs:
       - name: Buat GitHub release & lampirkan .aar
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ffmpeg-kit-next-${{ inputs.ffmpeg_kit_ref }}
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || \
