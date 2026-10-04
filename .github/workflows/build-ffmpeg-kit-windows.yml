@@ -14,6 +14,7 @@ name: Build ffmpeg-kit-next Windows bundle
 # cmake untuk libaom/x265/srt (dibutuhkan saat --enable-gpl).
 # Wiki Building-Windows: bundle ada di prebuilt/bundle-windows/ffmpeg-kit-next/
 # (include/ bin/ lib/ licenses/) -- verifikasi + zip menunjuk ke sana.
+# Jangan pipe ls ke head di step verifikasi (SIGPIPE = exit 141 di MSYS2).
 
 on:
   workflow_dispatch:
@@ -95,11 +96,10 @@ jobs:
 
       - name: Verifikasi hasil build (bundle-windows)
         run: |
-          ls -lhR prebuilt/bundle-windows | head -n 60
-          test -d prebuilt/bundle-windows/ffmpeg-kit-next/bin || { echo 'ffmpeg-kit-next/bin tidak dihasilkan'; exit 1; }
           ls prebuilt/bundle-windows/ffmpeg-kit-next/bin/*.dll
-          ls prebuilt/bundle-windows/ffmpeg-kit-next/include | head -n 20
-          ls prebuilt/bundle-windows/ffmpeg-kit-next/lib | head -n 20
+          test -f prebuilt/bundle-windows/ffmpeg-kit-next/bin/libffmpegkit-12.dll
+          ls prebuilt/bundle-windows/ffmpeg-kit-next/lib
+          ls prebuilt/bundle-windows/ffmpeg-kit-next/include/ffmpegkit | head -n 5 || true
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
