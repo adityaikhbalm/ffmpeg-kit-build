@@ -1,12 +1,15 @@
 name: Build ffmpeg-kit-next Windows bundle
 
-# Build manual saja karena prosesnya berat (+-1-3 jam, menit-billing 2x di Windows runner repo privat).
+# Build manual saja karena prosesnya berat (+-1-3 jam di Windows runner).
+# Repo ini PUBLIC jadi GitHub Actions gratis (tidak ada menit-billing).
 # Pola SAMA seperti build-ffmpeg-kit.yml (Android):
 # CI meng-clone arthenica/ffmpeg-kit-next langsung saat build, menjalankan ./windows.sh
 # di MSYS2/MinGW-w64, lalu bundle-windows hasilnya di-zip dan dipublish sebagai
 # release asset di repo ini.
 # Catatan upstream v9.0.0: x86-64 "implemented but not yet tested" -- build CI ini
 # sekaligus menjadi bukti kualifikasi VEDIT di host x64.
+# Wiki Windows-Prerequisites: nasm WAJIB untuk x86-64 (assembly optimizations),
+# patch untuk libiconv, cmake untuk libaom/x265/srt (dibutuhkan saat --enable-gpl).
 
 on:
   workflow_dispatch:
@@ -55,8 +58,12 @@ jobs:
             mingw-w64-x86_64-pkgconf
             mingw-w64-x86_64-meson
             mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-nasm
+            nasm
+            yasm
             make autoconf automake libtool
-            git curl rsync pkg-config gperf
+            git curl rsync pkg-config gperf patch
             gtk-doc autogen bison gettext-devel
 
       - name: Build bundle-windows (windows.sh)
@@ -67,6 +74,20 @@ jobs:
           fi
           echo "Flags windows.sh: $FLAGS"
           ./windows.sh $FLAGS
+
+      - name: Tampilkan ekor build.log saat gagal
+        if: failure()
+        run: |
+          echo '===== tail build.log ====='
+          tail -n 200 build.log || echo '(build.log tidak ada)'
+
+      - name: Upload build.log saat gagal
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-kit-next-windows-buildlog-${{ inputs.ffmpeg_kit_ref }}
+          path: build.log
+          if-no-files-found: warn
 
       - name: Verifikasi hasil build (bundle-windows)
         run: |
