@@ -8,8 +8,10 @@ name: Build ffmpeg-kit-next Windows bundle
 # release asset di repo ini.
 # Catatan upstream v9.0.0: x86-64 "implemented but not yet tested" -- build CI ini
 # sekaligus menjadi bukti kualifikasi VEDIT di host x64.
-# Wiki Windows-Prerequisites: nasm WAJIB untuk x86-64 (assembly optimizations),
-# patch untuk libiconv, cmake untuk libaom/x265/srt (dibutuhkan saat --enable-gpl).
+# Wiki MinGW-Toolchain: build x86-64 WAJIB dari shell CLANG64 (bukan MINGW64) --
+# MINGW64 + clang gagal link libwinpthread (undefined __stack_chk_fail dkk).
+# Wiki Windows-Prerequisites: nasm WAJIB untuk x86-64, patch untuk libiconv,
+# cmake untuk libaom/x265/srt (dibutuhkan saat --enable-gpl).
 
 on:
   workflow_dispatch:
@@ -47,19 +49,19 @@ jobs:
           ref: ${{ inputs.ffmpeg_kit_ref }}
           fetch-depth: 1
 
-      - name: Setup MSYS2 + MinGW-w64 toolchain
+      - name: Setup MSYS2 + CLANG64 toolchain
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: CLANG64
           update: true
           install: >-
             base-devel
-            mingw-w64-x86_64-clang
-            mingw-w64-x86_64-pkgconf
-            mingw-w64-x86_64-meson
-            mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-nasm
+            mingw-w64-clang-x86_64-clang
+            mingw-w64-clang-x86_64-pkgconf
+            mingw-w64-clang-x86_64-meson
+            mingw-w64-clang-x86_64-ninja
+            mingw-w64-clang-x86_64-cmake
+            mingw-w64-clang-x86_64-nasm
             nasm
             yasm
             make autoconf automake libtool
