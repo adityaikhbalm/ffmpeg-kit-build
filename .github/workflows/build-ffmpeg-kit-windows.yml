@@ -1,0 +1,113 @@
+name: Build ffmpeg-kit-next Windows bundle
+
+# Build manual saja karena prosesnya berat (+-1-3 jam, menit-billing 2x di Windows runner repo privat).
+# Pola SAMA seperti build-ffmpeg-kit.yml (Android):
+# CI meng-clone arthenica/ffmpeg-kit-next langsung saat build, menjalankan ./windows.sh
+# di MSYS2/MinGW-w64, lalu bundle-windows hasilnya di-zip dan dipublish sebagai
+# release asset di repo ini.
+# Catatan upstream v9.0.0: x86-64 "implemented but not yet tested" -- build CI ini
+# sekaligus menjadi bukti kualifikasi VEDIT di host x64.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ffmpeg_kit_ref:
+        description: "Ref ffmpeg-kit-next (tag/branch/commit) dari arthenica"
+        required: false
+        default: "v9.0.0"
+      enable_gpl:
+        description: "Aktifkan GPL --enable-gpl (wajib untuk x264/x265)"
+        type: boolean
+        required: false
+        default: false
+      extra_build_flags:
+        description: "Flag tambahan windows.sh (spasi sebagai pemisah)"
+        required: false
+        default: "--disable-arch-arm64"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: windows.sh (${{ inputs.ffmpeg_kit_ref }})
+    runs-on: windows-latest
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout source ffmpeg-kit-next
+        uses: actions/checkout@v4
+        with:
+          repository: arthenica/ffmpeg-kit-next
+          ref: ${{ inputs.ffmpeg_kit_ref }}
+          fetch-depth: 1
+
+      - name: Setup MSYS2 + MinGW-w64 toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            base-devel
+            mingw-w64-x86_64-clang
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-ninja
+            make autoconf automake libtool
+            git curl rsync pkg-config gperf
+            gtk-doc autogen bison gettext-devel
+
+      - name: Build bundle-windows (windows.sh)
+        run: |
+          FLAGS="${{ inputs.extra_build_flags }}"
+          if [ "${{ inputs.enable_gpl }}" = "true" ]; then
+            FLAGS="$FLAGS --enable-gpl"
+          fi
+          echo "Flags windows.sh: $FLAGS"
+          ./windows.sh $FLAGS
+
+      - name: Verifikasi hasil build (bundle-windows)
+        run: |
+          ls -lh prebuilt/bundle-windows
+          test -d prebuilt/bundle-windows/bin || { echo 'bundle-windows/bin tidak dihasilkan'; exit 1; }
+          ls prebuilt/bundle-windows/bin/*.dll
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-kit-next-windows-${{ inputs.ffmpeg_kit_ref }}
+          path: prebuilt/bundle-windows
+          if-no-files-found: error
+
+  release:
+    name: Publish bundle sebagai release asset
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Unduh artifact build
+        uses: actions/download-artifact@v4
+        with:
+          name: ffmpeg-kit-next-windows-${{ inputs.ffmpeg_kit_ref }}
+          path: bundle-windows
+
+      - name: Zip bundle-windows
+        run: |
+          (cd bundle-windows && zip -qr ../ffmpeg-kit-next-windows-${{ inputs.ffmpeg_kit_ref }}.zip .)
+          ls -lh *.zip
+
+      - name: Buat GitHub release & lampirkan zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ffmpeg-kit-next-${{ inputs.ffmpeg_kit_ref }}-windows
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes "ffmpeg-kit-next ${{ inputs.ffmpeg_kit_ref }} Windows bundle (bundle-windows/), dibangun otomatis oleh CI VEDIT via ./windows.sh (MSYS2/MinGW-w64). Source: https://github.com/arthenica/ffmpeg-kit-next/tree/${{ inputs.ffmpeg_kit_ref }}. Isi: header + import lib + DLL (bin/). Ship DLL dari bin/ di sebelah aplikasi."
+          gh release upload "$TAG" ffmpeg-kit-next-windows-*.zip --clobber
+          echo "Release $TAG siap:"
+          gh release view "$TAG" --json url -q .url
