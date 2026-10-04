@@ -12,6 +12,8 @@ name: Build ffmpeg-kit-next Windows bundle
 # MINGW64 + clang gagal link libwinpthread (undefined __stack_chk_fail dkk).
 # Wiki Windows-Prerequisites: nasm WAJIB untuk x86-64, patch untuk libiconv,
 # cmake untuk libaom/x265/srt (dibutuhkan saat --enable-gpl).
+# Wiki Building-Windows: bundle ada di prebuilt/bundle-windows/ffmpeg-kit-next/
+# (include/ bin/ lib/ licenses/) -- verifikasi + zip menunjuk ke sana.
 
 on:
   workflow_dispatch:
@@ -93,9 +95,11 @@ jobs:
 
       - name: Verifikasi hasil build (bundle-windows)
         run: |
-          ls -lh prebuilt/bundle-windows
-          test -d prebuilt/bundle-windows/bin || { echo 'bundle-windows/bin tidak dihasilkan'; exit 1; }
-          ls prebuilt/bundle-windows/bin/*.dll
+          ls -lhR prebuilt/bundle-windows | head -n 60
+          test -d prebuilt/bundle-windows/ffmpeg-kit-next/bin || { echo 'ffmpeg-kit-next/bin tidak dihasilkan'; exit 1; }
+          ls prebuilt/bundle-windows/ffmpeg-kit-next/bin/*.dll
+          ls prebuilt/bundle-windows/ffmpeg-kit-next/include | head -n 20
+          ls prebuilt/bundle-windows/ffmpeg-kit-next/lib | head -n 20
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
@@ -130,7 +134,7 @@ jobs:
           gh release view "$TAG" >/dev/null 2>&1 || \
             gh release create "$TAG" \
               --title "$TAG" \
-              --notes "ffmpeg-kit-next ${{ inputs.ffmpeg_kit_ref }} Windows bundle (bundle-windows/), dibangun otomatis oleh CI VEDIT via ./windows.sh (MSYS2/MinGW-w64). Source: https://github.com/arthenica/ffmpeg-kit-next/tree/${{ inputs.ffmpeg_kit_ref }}. Isi: header + import lib + DLL (bin/). Ship DLL dari bin/ di sebelah aplikasi."
+              --notes "ffmpeg-kit-next ${{ inputs.ffmpeg_kit_ref }} Windows bundle (bundle-windows/ffmpeg-kit-next/: bin/ DLL + include/ + lib/ + licenses/), dibangun otomatis oleh CI VEDIT via ./windows.sh (MSYS2 CLANG64). Source: https://github.com/arthenica/ffmpeg-kit-next/tree/${{ inputs.ffmpeg_kit_ref }}. Ship DLL dari bin/ di sebelah aplikasi."
           gh release upload "$TAG" ffmpeg-kit-next-windows-*.zip --clobber
           echo "Release $TAG siap:"
           gh release view "$TAG" --json url -q .url
